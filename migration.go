@@ -1,4 +1,4 @@
-package GoMigrations
+package migrations
 
 import (
 	"bytes"

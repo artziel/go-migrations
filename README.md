@@ -1,7 +1,5 @@
-# [![N|Solid](https://www.alus.com.mx/assets/images/logo.svg)](https://www.alus.com.mx/)
 # Golang Migrations
-Artziel Narvaiza <artziel@alus.com.mx>
-This is a private repo, you must setup your enviroment to be able to use this repo. Check Google instruction for Private Repos setup for Golang
+Artziel Narvaiza <artziel@gmail.com>
 
 ### Features
 - TBD

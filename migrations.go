@@ -1,12 +1,12 @@
-package GoMigrations
+package migrations
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -26,7 +26,7 @@ func MigrationFromString(body string) Migration {
 
 func MigrationFromFile(fileName string) (Migration, error) {
 	migration := Migration{}
-	content, err := ioutil.ReadFile(fileName)
+	content, err := os.ReadFile(fileName)
 	if err != nil {
 		return migration, err
 	}
@@ -255,7 +255,7 @@ func (m *Migrations) GetMigrations() []Migration {
 
 func (m *Migrations) LoadFolder(path string) error {
 
-	files, err := ioutil.ReadDir(path)
+	files, err := os.ReadDir(path)
 	if err != nil {
 		return err
 	}
