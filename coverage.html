@@ -1,0 +1,790 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>go-migrations: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/artziel/go-migrations/bridge.go (0.0%)</option>
+				
+				<option value="file1">github.com/artziel/go-migrations/database.go (0.0%)</option>
+				
+				<option value="file2">github.com/artziel/go-migrations/migration.go (96.2%)</option>
+				
+				<option value="file3">github.com/artziel/go-migrations/migrations.go (3.2%)</option>
+				
+				<option value="file4">github.com/artziel/go-migrations/security.go (0.0%)</option>
+				
+				<option value="file5">github.com/artziel/go-migrations/tests.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package migrations
+
+type MigrationBridge struct{}
+
+func (mb *MigrationBridge) Encript(value string) (string, error) <span class="cov0" title="0">{
+        return HashPassword(value)
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package migrations
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "fmt"
+        "sync"
+        "time"
+
+        _ "github.com/go-sql-driver/mysql"
+)
+
+type MySqlSettings struct {
+        Username         string
+        Password         string
+        Host             string
+        Port             string
+        Database         string
+        MaxAllowedPacket int
+        ConnMaxLifetime  time.Duration
+        MaxOpenConns     int
+        MaxIdleConns     int
+}
+
+func setMySqlDefaults(cnf *MySqlSettings) <span class="cov0" title="0">{
+        if cnf.MaxIdleConns == 0 </span><span class="cov0" title="0">{
+                cnf.MaxIdleConns = 10
+        }</span>
+        <span class="cov0" title="0">if cnf.MaxOpenConns == 0 </span><span class="cov0" title="0">{
+                cnf.MaxOpenConns = 10
+        }</span>
+        <span class="cov0" title="0">if cnf.ConnMaxLifetime == 0 </span><span class="cov0" title="0">{
+                cnf.ConnMaxLifetime = time.Minute * 3
+        }</span>
+        <span class="cov0" title="0">if cnf.MaxAllowedPacket == 0 </span><span class="cov0" title="0">{
+                cnf.MaxAllowedPacket = 12194304
+        }</span>
+}
+
+var ErrNoOpenConnection = errors.New("no open connection found")
+
+var conn *sql.DB
+var lock = &amp;sync.Mutex{}
+
+func Connection() (*sql.DB, error) <span class="cov0" title="0">{
+        if conn == nil </span><span class="cov0" title="0">{
+                return nil, ErrNoOpenConnection
+        }</span>
+
+        <span class="cov0" title="0">return conn, nil</span>
+}
+
+func Transaction(db *sql.DB, transaction func() error) error <span class="cov0" title="0">{
+
+        ctx := context.Background()
+        tx, err := db.BeginTx(ctx, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        // Defer a rollback in case anything fails.
+        <span class="cov0" title="0">defer tx.Rollback()
+
+        if err := transaction(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Commit the transaction.
+        <span class="cov0" title="0">if err = tx.Commit(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+func OpenMySql(cnf MySqlSettings) (*sql.DB, error) <span class="cov0" title="0">{
+
+        if conn != nil </span><span class="cov0" title="0">{
+                return conn, nil
+        }</span>
+
+        <span class="cov0" title="0">lock.Lock()
+        defer lock.Unlock()
+
+        setMySqlDefaults(&amp;cnf)
+
+        dsn := fmt.Sprintf(
+                "%v:%v@tcp(%v:%v)/%v?tls=skip-verify&amp;autocommit=true&amp;multiStatements=true&amp;parseTime=true&amp;maxAllowedPacket=%v",
+                cnf.Username,
+                cnf.Password,
+                cnf.Host,
+                cnf.Port,
+                cnf.Database,
+                cnf.MaxAllowedPacket,
+        )
+
+        db, err := sql.Open("mysql", dsn)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        // See "Important settings" section.
+        <span class="cov0" title="0">db.SetConnMaxLifetime(cnf.ConnMaxLifetime)
+        db.SetMaxOpenConns(cnf.MaxOpenConns)
+        db.SetMaxIdleConns(cnf.MaxIdleConns)
+
+        conn = db
+
+        return conn, nil</span>
+}
+
+func Close() <span class="cov0" title="0">{
+        conn.Close()
+        conn = nil
+}</span>
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package migrations
+
+import (
+        "bytes"
+        "database/sql"
+        "html/template"
+        "regexp"
+        "strings"
+)
+
+const (
+        StatusUp   string = "UP"
+        StatusDown string = "DOWN"
+)
+
+type Migration struct {
+        Version   string
+        Name      string
+        Up        string
+        Down      string
+        Status    string
+        StartTime *sql.NullTime
+        EndTime   *sql.NullTime
+}
+
+func parseTplSQL(sql string, bridge interface{}) (string, error) <span class="cov8" title="1">{
+        buf := &amp;bytes.Buffer{}
+
+        tmpl, err := template.New("").Parse(sql)
+
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+
+        <span class="cov8" title="1">err = tmpl.Execute(buf, &amp;bridge)
+
+        return buf.String(), err</span>
+}
+
+func (m *Migration) getVersion(body string) string <span class="cov8" title="1">{
+        re := regexp.MustCompile(`(?i)\-- Version: (\d.*)\n`)
+        match := re.FindStringSubmatch(body)
+
+        if len(match) &gt; 1 </span><span class="cov8" title="1">{
+                return strings.TrimSpace(match[1])
+        }</span>
+        <span class="cov8" title="1">return ""</span>
+}
+
+func (m *Migration) getName(body string) string <span class="cov8" title="1">{
+        re := regexp.MustCompile(`(?i)\-- Name: (.*)\n`)
+        match := re.FindStringSubmatch(body)
+
+        if len(match) &gt; 1 </span><span class="cov8" title="1">{
+                return strings.TrimSpace(match[1])
+        }</span>
+        <span class="cov8" title="1">return ""</span>
+}
+
+func (m *Migration) getUpQuery(body string) string <span class="cov8" title="1">{
+        re := regexp.MustCompile(`(?i)\-- up start(?s)(.*)\-- up end`)
+        match := re.FindStringSubmatch(body)
+
+        if len(match) &gt; 1 </span><span class="cov8" title="1">{
+                return strings.TrimSpace(match[1])
+        }</span>
+        <span class="cov8" title="1">return ""</span>
+}
+
+func (m *Migration) getDownQuery(body string) string <span class="cov8" title="1">{
+        re := regexp.MustCompile(`(?i)\-- down start(?s)(.*)\-- down end`)
+        match := re.FindStringSubmatch(body)
+
+        if len(match) &gt; 1 </span><span class="cov8" title="1">{
+                return strings.TrimSpace(match[1])
+        }</span>
+        <span class="cov8" title="1">return ""</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package migrations
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "fmt"
+        "log"
+        "os"
+        "sort"
+        "strings"
+        "time"
+)
+
+func MigrationFromString(body string) Migration <span class="cov8" title="1">{
+
+        migration := Migration{}
+
+        migration.Up = migration.getUpQuery(body)
+        migration.Down = migration.getDownQuery(body)
+        migration.Version = migration.getVersion(body)
+        migration.Name = migration.getName(body)
+
+        return migration
+}</span>
+
+func MigrationFromFile(fileName string) (Migration, error) <span class="cov0" title="0">{
+        migration := Migration{}
+        content, err := os.ReadFile(fileName)
+        if err != nil </span><span class="cov0" title="0">{
+                return migration, err
+        }</span>
+
+        <span class="cov0" title="0">migration.Up = migration.getUpQuery(string(content))
+        migration.Down = migration.getDownQuery(string(content))
+        migration.Version = migration.getVersion(string(content))
+        migration.Name = migration.getName(string(content))
+
+        return migration, nil</span>
+}
+
+/**
+ * Query for migration execution log
+ */
+const migrationsQuery string = `
+CREATE TABLE IF NOT EXISTS {{TABLE_PREFIX}}migrations (
+        version VARCHAR(14) NOT NULL,
+        migration_name VARCHAR(128) NULL,
+        start_time TIMESTAMP NULL DEFAULT NOW(),
+        end_time TIMESTAMP NULL,
+        PRIMARY KEY (version),
+        UNIQUE INDEX version_UNIQUE (version ASC))
+ENGINE = InnoDB;
+`
+
+/**
+ * Migrations structure
+ */
+type Migrations struct {
+        db          *sql.DB
+        tablePrefix string
+        migrations  map[string]Migration
+        ups         []string
+        downs       []string
+}
+
+func (m *Migrations) Transaction(fnc func(tx *sql.Tx) error) error <span class="cov0" title="0">{
+
+        ctx := context.Background()
+        tx, err := m.db.BeginTx(ctx, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        // Defer a rollback in case anything fails.
+        <span class="cov0" title="0">defer tx.Rollback()
+
+        if err := fnc(tx); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Commit the transaction.
+        <span class="cov0" title="0">if err = tx.Commit(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+/**
+ * Reset migration structure, clear loaded migrations map and slices
+ */
+func (m *Migrations) Reset() <span class="cov0" title="0">{
+        for k := range m.migrations </span><span class="cov0" title="0">{
+                delete(m.migrations, k)
+        }</span>
+        <span class="cov0" title="0">m.ups = []string{}
+        m.downs = []string{}</span>
+}
+
+/**
+ * Add a migration to Migrations structure
+ */
+func (m *Migrations) addMigration(migration Migration) <span class="cov0" title="0">{
+
+        if _, found := m.migrations[migration.Version]; !found </span><span class="cov0" title="0">{
+                migration.Status = StatusDown
+                m.migrations[migration.Version] = migration
+                if !m.IsVersionUp(migration.Version) </span><span class="cov0" title="0">{
+                        m.downs = append(m.downs, migration.Version)
+                }</span>
+        } else<span class="cov0" title="0"> {
+                migration.Status = StatusUp
+                m.migrations[migration.Version] = migration
+        }</span>
+}
+
+/**
+ * Transverse a Migrations slice and add no duplicated migrations. If duplicated
+ * the function Migrations.Reset() is executed and return an error
+ */
+func (m *Migrations) AddMigrations(migrations []Migration) error <span class="cov0" title="0">{
+
+        versions := map[string]bool{}
+
+        for _, migration := range migrations </span><span class="cov0" title="0">{
+                if _, found := versions[migration.Version]; found </span><span class="cov0" title="0">{
+                        m.Reset()
+                        return errors.New("found duplicated migration version \"" + migration.Version + "\"")
+                }</span> else<span class="cov0" title="0"> {
+                        m.addMigration(migration)
+                        versions[migration.Version] = true
+                }</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+/**
+ * Check if a migration version is already up
+ */
+func (m *Migrations) IsVersionUp(version string) bool <span class="cov0" title="0">{
+        for _, m := range m.ups </span><span class="cov0" title="0">{
+                if version == m </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+        }
+
+        <span class="cov0" title="0">return false</span>
+}
+
+/**
+ * Initialize the Migrations structure.
+ *
+ * Read executed migrations and add then into Migrations structure
+ *
+ * If the migrations table is missing, this function create de table to keep an
+ * execution log.
+ */
+func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, error) <span class="cov0" title="0">{
+        m.migrations = map[string]Migration{}
+        m.ups = []string{}
+        m.downs = []string{}
+
+        query := ""
+        if tblprefix != "" </span><span class="cov0" title="0">{
+                query = strings.Replace(migrationsQuery, "{{TABLE_PREFIX}}", tblprefix+"_", 1)
+                m.tablePrefix = tblprefix
+        }</span> else<span class="cov0" title="0"> {
+                query = strings.Replace(migrationsQuery, "{{TABLE_PREFIX}}", "", 1)
+        }</span>
+
+        <span class="cov0" title="0">if _, err := db.Exec(query); err != nil </span><span class="cov0" title="0">{
+                panic(err)</span>
+        }
+        <span class="cov0" title="0">m.db = db
+
+        queryUps := "SELECT version, migration_name, start_time, end_time FROM " + m.tablePrefix + "_" + "migrations ORDER BY version ASC"
+        rows, err := m.db.Query(queryUps)
+        if err != nil </span><span class="cov0" title="0">{
+                panic(err)</span>
+        }
+        <span class="cov0" title="0">defer rows.Close()
+        for rows.Next() </span><span class="cov0" title="0">{
+                migration := Migration{}
+                err := rows.Scan(&amp;migration.Version, &amp;migration.Name, &amp;migration.StartTime, &amp;migration.EndTime)
+                if err != nil </span><span class="cov0" title="0">{
+                        log.Fatal(err)
+                }</span> else<span class="cov0" title="0"> {
+                        migration.Status = StatusUp
+                        m.migrations[migration.Version] = migration
+                        m.ups = append(m.ups, migration.Version)
+                }</span>
+        }
+        <span class="cov0" title="0">err = rows.Err()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal(err)
+        }</span>
+
+        <span class="cov0" title="0">return m, err</span>
+}
+
+func (m *Migrations) GetMigrationsByStatus(status string) []Migration <span class="cov0" title="0">{
+
+        migrations := []Migration{}
+
+        keys := make([]string, 0, len(m.migrations))
+        for k := range m.migrations </span><span class="cov0" title="0">{
+                keys = append(keys, k)
+        }</span>
+        <span class="cov0" title="0">sort.Strings(keys)
+
+        for _, k := range keys </span><span class="cov0" title="0">{
+                if m.migrations[k].Status == status </span><span class="cov0" title="0">{
+                        migrations = append(migrations, m.migrations[k])
+                }</span>
+        }
+
+        <span class="cov0" title="0">return migrations</span>
+}
+
+func (m *Migrations) GetMigrationStatus(migration *Migration) (string, error) <span class="cov0" title="0">{
+
+        query := `SELECT version, start_time, end_time FROM migrations WHERE version = ? LIMIT 1`
+
+        var version string
+
+        if err := m.db.QueryRow(query, migration.Version).Scan(
+                &amp;version,
+                &amp;migration.StartTime,
+                &amp;migration.EndTime,
+        ); err != nil </span><span class="cov0" title="0">{
+                migration.Status = StatusDown
+                return "", err
+        }</span>
+
+        <span class="cov0" title="0">migration.Status = StatusUp
+
+        return migration.Status, nil</span>
+}
+
+func (m *Migrations) GetMigrations() []Migration <span class="cov0" title="0">{
+
+        migrations := make([]Migration, 0, len(m.migrations))
+        keys := make([]string, 0, len(m.migrations))
+        for k := range m.migrations </span><span class="cov0" title="0">{
+                keys = append(keys, k)
+        }</span>
+        <span class="cov0" title="0">sort.Strings(keys)
+
+        for _, k := range keys </span><span class="cov0" title="0">{
+                migrations = append(migrations, m.migrations[k])
+        }</span>
+
+        <span class="cov0" title="0">return migrations</span>
+}
+
+func (m *Migrations) LoadFolder(path string) error <span class="cov0" title="0">{
+
+        files, err := os.ReadDir(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">for _, file := range files </span><span class="cov0" title="0">{
+                migration, err := MigrationFromFile(path + "/" + file.Name())
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">if _, found := m.migrations[migration.Version]; found </span><span class="cov0" title="0">{
+                        return errors.New("Migration version \"" + migration.Version + "\" is duplicated")
+                }</span> else<span class="cov0" title="0"> {
+                        m.migrations[migration.Version] = migration
+                        if migration.Status == StatusDown </span><span class="cov0" title="0">{
+                                m.downs = append(m.downs, migration.Version)
+                        }</span> else<span class="cov0" title="0"> {
+                                m.ups = append(m.ups, migration.Version)
+                        }</span>
+                }
+        }
+
+        <span class="cov0" title="0">sort.Strings(m.ups)
+        sort.Strings(m.downs)
+
+        return nil</span>
+}
+
+func (m *Migrations) HasDownMigrations() bool <span class="cov0" title="0">{
+        return len(m.downs) &gt; 0
+}</span>
+
+func (m *Migrations) HasUpMigrations() bool <span class="cov0" title="0">{
+        return len(m.ups) &gt; 0
+}</span>
+
+func (m *Migrations) migrate(migration *Migration, bridge interface{}) error <span class="cov0" title="0">{
+        if migration.Status != StatusDown </span><span class="cov0" title="0">{
+                return errors.New("migration " + migration.Version + " &gt;&gt; Migration already Up")
+        }</span>
+
+        <span class="cov0" title="0">if err := m.Transaction(func(tx *sql.Tx) error </span><span class="cov0" title="0">{
+                start := time.Now()
+
+                inQuery := "INSERT INTO " + m.tablePrefix + "_" + "migrations(version, migration_name, start_time)VALUES(?,?,?);"
+                if _, err := tx.Exec(inQuery, migration.Version, migration.Name, start); err != nil </span><span class="cov0" title="0">{
+                        return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
+                }</span>
+
+                <span class="cov0" title="0">upQuery, err := parseTplSQL(migration.Up, bridge)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+
+                <span class="cov0" title="0">if _, err := tx.Exec(upQuery); err != nil </span><span class="cov0" title="0">{
+                        return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
+                }</span>
+
+                <span class="cov0" title="0">updateQuery := "UPDATE " + m.tablePrefix + "_" + "migrations SET end_time = ? WHERE version = ?;"
+                end := time.Now()
+                if _, err := tx.Exec(updateQuery, end, migration.Version); err != nil </span><span class="cov0" title="0">{
+                        return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
+                }</span>
+
+                <span class="cov0" title="0">migration.Status = StatusUp
+                migration.StartTime = new(sql.NullTime)
+                migration.StartTime.Time = start
+
+                migration.EndTime = new(sql.NullTime)
+                migration.EndTime.Time = end
+
+                return nil</span>
+        }); err != nil <span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (m *Migrations) Migrate(bridge interface{}, pre func(*Migration), post func(*Migration)) error <span class="cov0" title="0">{
+
+        for _, version := range m.downs </span><span class="cov0" title="0">{
+                migration := m.migrations[version]
+                if pre != nil </span><span class="cov0" title="0">{
+                        pre(&amp;migration)
+                }</span>
+                <span class="cov0" title="0">if err := m.migrate(&amp;migration, bridge); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">if post != nil </span><span class="cov0" title="0">{
+                        post(&amp;migration)
+                }</span>
+                <span class="cov0" title="0">m.migrations[migration.Version] = migration
+                m.ups = append(m.ups, migration.Version)</span>
+
+        }
+        <span class="cov0" title="0">m.downs = []string{}
+
+        return nil</span>
+}
+
+func (m *Migrations) rollback(migration *Migration, bridge interface{}) error <span class="cov0" title="0">{
+
+        if migration.Status != StatusUp </span><span class="cov0" title="0">{
+                return errors.New("migration " + migration.Version + " &gt;&gt; Migration already Down")
+        }</span>
+        <span class="cov0" title="0">downQuery, err := parseTplSQL(migration.Down, bridge)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := m.Transaction(func(tx *sql.Tx) error </span><span class="cov0" title="0">{
+                if downQuery != "" </span><span class="cov0" title="0">{
+                        fmt.Printf("Down Query executed: %v\n", downQuery)
+                        if _, err := m.db.Exec(downQuery); err != nil </span><span class="cov0" title="0">{
+                                return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
+                        }</span>
+                }
+
+                <span class="cov0" title="0">delQuery := "DELETE FROM " + m.tablePrefix + "_" + "migrations WHERE version = ?"
+                if _, err := m.db.Exec(delQuery, migration.Version); err != nil </span><span class="cov0" title="0">{
+                        return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
+                }</span>
+
+                <span class="cov0" title="0">migration.Status = StatusDown
+
+                return nil</span>
+        }); err != nil <span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (m *Migrations) Rollback(bridge interface{}, pre func(*Migration), post func(*Migration)) error <span class="cov0" title="0">{
+
+        if len(m.ups) &gt; 0 </span><span class="cov0" title="0">{
+                last := m.ups[len(m.ups)-1]
+                migration := m.migrations[last]
+
+                if pre != nil </span><span class="cov0" title="0">{
+                        pre(&amp;migration)
+                }</span>
+                <span class="cov0" title="0">err := m.rollback(&amp;migration, bridge)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span> else<span class="cov0" title="0"> {
+                        m.ups = m.ups[:len(m.ups)-1]
+                        m.downs = append(m.downs, last)
+                        m.migrations[migration.Version] = migration
+                }</span>
+                <span class="cov0" title="0">if post != nil </span><span class="cov0" title="0">{
+                        post(&amp;migration)
+                }</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package migrations
+
+import "golang.org/x/crypto/bcrypt"
+
+func HashPassword(password string) (string, error) <span class="cov0" title="0">{
+        bytes, err := bcrypt.GenerateFromPassword([]byte(password), 11)
+        return string(bytes), err
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package migrations
+
+type testMigration struct {
+        Migration
+}
+
+type TestBridge struct {
+        MigrationBridge
+}
+
+/**
+ * Compare expected data with parameter
+ */
+func (pt *SQLParserTest) excuteTest() (bool, []string) <span class="cov0" title="0">{
+
+        errors := []string{}
+
+        return len(errors) == 0, errors
+}</span>
+
+/**
+ * Row Parser Test struct
+ */
+type SQLParserTest struct {
+        input       string
+        expected    string
+        errExpected []error
+}
+
+/**
+ * Check if an error is in expected errors list
+ */
+func (rt *SQLParserTest) IsErrorExpected(e error) bool <span class="cov0" title="0">{
+        if rt.errExpected == nil </span><span class="cov0" title="0">{
+                return false
+        }</span>
+
+        <span class="cov0" title="0">for _, err := range rt.errExpected </span><span class="cov0" title="0">{
+                if err == e </span><span class="cov0" title="0">{
+                        return true
+                }</span>
+        }
+
+        <span class="cov0" title="0">return false</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
