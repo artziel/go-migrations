@@ -65,8 +65,6 @@
 				
 				<option value="file4">github.com/artziel/go-migrations/security.go (0.0%)</option>
 				
-				<option value="file5">github.com/artziel/go-migrations/tests.go (0.0%)</option>
-				
 				</select>
 			</div>
 			<div id="legend">
@@ -298,7 +296,17 @@ import (
         "time"
 )
 
-func MigrationFromString(body string) Migration <span class="cov8" title="1">{
+func migrationsTableName(prefix string) string <span class="cov0" title="0">{
+        tblName := "migrations"
+
+        if prefix != "" </span><span class="cov0" title="0">{
+                tblName = prefix + "_" + tblName
+        }</span>
+
+        <span class="cov0" title="0">return tblName</span>
+}
+
+func FromString(body string) Migration <span class="cov8" title="1">{
 
         migration := Migration{}
 
@@ -310,7 +318,7 @@ func MigrationFromString(body string) Migration <span class="cov8" title="1">{
         return migration
 }</span>
 
-func MigrationFromFile(fileName string) (Migration, error) <span class="cov0" title="0">{
+func FromFile(fileName string) (Migration, error) <span class="cov0" title="0">{
         migration := Migration{}
         content, err := os.ReadFile(fileName)
         if err != nil </span><span class="cov0" title="0">{
@@ -329,7 +337,7 @@ func MigrationFromFile(fileName string) (Migration, error) <span class="cov0" ti
  * Query for migration execution log
  */
 const migrationsQuery string = `
-CREATE TABLE IF NOT EXISTS {{TABLE_PREFIX}}migrations (
+CREATE TABLE IF NOT EXISTS {{MIGRATIONS_TABLE_NAME}} (
         version VARCHAR(14) NOT NULL,
         migration_name VARCHAR(128) NULL,
         start_time TIMESTAMP NULL DEFAULT NOW(),
@@ -442,24 +450,19 @@ func (m *Migrations) IsVersionUp(version string) bool <span class="cov0" title="
  * execution log.
  */
 func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, error) <span class="cov0" title="0">{
+        m.tablePrefix = tblprefix
         m.migrations = map[string]Migration{}
         m.ups = []string{}
         m.downs = []string{}
 
-        query := ""
-        if tblprefix != "" </span><span class="cov0" title="0">{
-                query = strings.Replace(migrationsQuery, "{{TABLE_PREFIX}}", tblprefix+"_", 1)
-                m.tablePrefix = tblprefix
-        }</span> else<span class="cov0" title="0"> {
-                query = strings.Replace(migrationsQuery, "{{TABLE_PREFIX}}", "", 1)
-        }</span>
+        query := strings.Replace(migrationsQuery, "{{MIGRATIONS_TABLE_NAME}}", migrationsTableName(tblprefix), 1)
 
-        <span class="cov0" title="0">if _, err := db.Exec(query); err != nil </span><span class="cov0" title="0">{
+        if _, err := db.Exec(query); err != nil </span><span class="cov0" title="0">{
                 panic(err)</span>
         }
         <span class="cov0" title="0">m.db = db
 
-        queryUps := "SELECT version, migration_name, start_time, end_time FROM " + m.tablePrefix + "_" + "migrations ORDER BY version ASC"
+        queryUps := "SELECT version, migration_name, start_time, end_time FROM " + migrationsTableName(tblprefix) + " ORDER BY version ASC"
         rows, err := m.db.Query(queryUps)
         if err != nil </span><span class="cov0" title="0">{
                 panic(err)</span>
@@ -505,7 +508,7 @@ func (m *Migrations) GetMigrationsByStatus(status string) []Migration <span clas
 
 func (m *Migrations) GetMigrationStatus(migration *Migration) (string, error) <span class="cov0" title="0">{
 
-        query := `SELECT version, start_time, end_time FROM migrations WHERE version = ? LIMIT 1`
+        query := "SELECT version, start_time, end_time FROM " + migrationsTableName(m.tablePrefix) + " WHERE version = ? LIMIT 1"
 
         var version string
 
@@ -547,7 +550,7 @@ func (m *Migrations) LoadFolder(path string) error <span class="cov0" title="0">
         }</span>
 
         <span class="cov0" title="0">for _, file := range files </span><span class="cov0" title="0">{
-                migration, err := MigrationFromFile(path + "/" + file.Name())
+                migration, err := FromFile(path + "/" + file.Name())
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
@@ -585,7 +588,7 @@ func (m *Migrations) migrate(migration *Migration, bridge interface{}) error <sp
         <span class="cov0" title="0">if err := m.Transaction(func(tx *sql.Tx) error </span><span class="cov0" title="0">{
                 start := time.Now()
 
-                inQuery := "INSERT INTO " + m.tablePrefix + "_" + "migrations(version, migration_name, start_time)VALUES(?,?,?);"
+                inQuery := "INSERT INTO " + migrationsTableName(m.tablePrefix) + "(version, migration_name, start_time)VALUES(?,?,?);"
                 if _, err := tx.Exec(inQuery, migration.Version, migration.Name, start); err != nil </span><span class="cov0" title="0">{
                         return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
                 }</span>
@@ -599,7 +602,7 @@ func (m *Migrations) migrate(migration *Migration, bridge interface{}) error <sp
                         return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
                 }</span>
 
-                <span class="cov0" title="0">updateQuery := "UPDATE " + m.tablePrefix + "_" + "migrations SET end_time = ? WHERE version = ?;"
+                <span class="cov0" title="0">updateQuery := "UPDATE " + migrationsTableName(m.tablePrefix) + " SET end_time = ? WHERE version = ?;"
                 end := time.Now()
                 if _, err := tx.Exec(updateQuery, end, migration.Version); err != nil </span><span class="cov0" title="0">{
                         return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
@@ -660,7 +663,7 @@ func (m *Migrations) rollback(migration *Migration, bridge interface{}) error <s
                         }</span>
                 }
 
-                <span class="cov0" title="0">delQuery := "DELETE FROM " + m.tablePrefix + "_" + "migrations WHERE version = ?"
+                <span class="cov0" title="0">delQuery := "DELETE FROM " + migrationsTableName(m.tablePrefix) + " WHERE version = ?"
                 if _, err := m.db.Exec(delQuery, migration.Version); err != nil </span><span class="cov0" title="0">{
                         return errors.New("migration " + migration.Version + " &gt;&gt; " + err.Error())
                 }</span>
@@ -709,53 +712,6 @@ func HashPassword(password string) (string, error) <span class="cov0" title="0">
         bytes, err := bcrypt.GenerateFromPassword([]byte(password), 11)
         return string(bytes), err
 }</span>
-</pre>
-		
-		<pre class="file" id="file5" style="display: none">package migrations
-
-type testMigration struct {
-        Migration
-}
-
-type TestBridge struct {
-        MigrationBridge
-}
-
-/**
- * Compare expected data with parameter
- */
-func (pt *SQLParserTest) excuteTest() (bool, []string) <span class="cov0" title="0">{
-
-        errors := []string{}
-
-        return len(errors) == 0, errors
-}</span>
-
-/**
- * Row Parser Test struct
- */
-type SQLParserTest struct {
-        input       string
-        expected    string
-        errExpected []error
-}
-
-/**
- * Check if an error is in expected errors list
- */
-func (rt *SQLParserTest) IsErrorExpected(e error) bool <span class="cov0" title="0">{
-        if rt.errExpected == nil </span><span class="cov0" title="0">{
-                return false
-        }</span>
-
-        <span class="cov0" title="0">for _, err := range rt.errExpected </span><span class="cov0" title="0">{
-                if err == e </span><span class="cov0" title="0">{
-                        return true
-                }</span>
-        }
-
-        <span class="cov0" title="0">return false</span>
-}
 </pre>
 		
 		</div>

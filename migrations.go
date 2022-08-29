@@ -12,7 +12,17 @@ import (
 	"time"
 )
 
-func MigrationFromString(body string) Migration {
+func migrationsTableName(prefix string) string {
+	tblName := "migrations"
+
+	if prefix != "" {
+		tblName = prefix + "_" + tblName
+	}
+
+	return tblName
+}
+
+func FromString(body string) Migration {
 
 	migration := Migration{}
 
@@ -24,7 +34,7 @@ func MigrationFromString(body string) Migration {
 	return migration
 }
 
-func MigrationFromFile(fileName string) (Migration, error) {
+func FromFile(fileName string) (Migration, error) {
 	migration := Migration{}
 	content, err := os.ReadFile(fileName)
 	if err != nil {
@@ -43,7 +53,7 @@ func MigrationFromFile(fileName string) (Migration, error) {
  * Query for migration execution log
  */
 const migrationsQuery string = `
-CREATE TABLE IF NOT EXISTS {{TABLE_PREFIX}}migrations (
+CREATE TABLE IF NOT EXISTS {{MIGRATIONS_TABLE_NAME}} (
 	version VARCHAR(14) NOT NULL,
 	migration_name VARCHAR(128) NULL,
 	start_time TIMESTAMP NULL DEFAULT NOW(),
@@ -156,24 +166,19 @@ func (m *Migrations) IsVersionUp(version string) bool {
  * execution log.
  */
 func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, error) {
+	m.tablePrefix = tblprefix
 	m.migrations = map[string]Migration{}
 	m.ups = []string{}
 	m.downs = []string{}
 
-	query := ""
-	if tblprefix != "" {
-		query = strings.Replace(migrationsQuery, "{{TABLE_PREFIX}}", tblprefix+"_", 1)
-		m.tablePrefix = tblprefix
-	} else {
-		query = strings.Replace(migrationsQuery, "{{TABLE_PREFIX}}", "", 1)
-	}
+	query := strings.Replace(migrationsQuery, "{{MIGRATIONS_TABLE_NAME}}", migrationsTableName(tblprefix), 1)
 
 	if _, err := db.Exec(query); err != nil {
 		panic(err)
 	}
 	m.db = db
 
-	queryUps := "SELECT version, migration_name, start_time, end_time FROM " + m.tablePrefix + "_" + "migrations ORDER BY version ASC"
+	queryUps := "SELECT version, migration_name, start_time, end_time FROM " + migrationsTableName(tblprefix) + " ORDER BY version ASC"
 	rows, err := m.db.Query(queryUps)
 	if err != nil {
 		panic(err)
@@ -219,7 +224,7 @@ func (m *Migrations) GetMigrationsByStatus(status string) []Migration {
 
 func (m *Migrations) GetMigrationStatus(migration *Migration) (string, error) {
 
-	query := `SELECT version, start_time, end_time FROM migrations WHERE version = ? LIMIT 1`
+	query := "SELECT version, start_time, end_time FROM " + migrationsTableName(m.tablePrefix) + " WHERE version = ? LIMIT 1"
 
 	var version string
 
@@ -261,7 +266,7 @@ func (m *Migrations) LoadFolder(path string) error {
 	}
 
 	for _, file := range files {
-		migration, err := MigrationFromFile(path + "/" + file.Name())
+		migration, err := FromFile(path + "/" + file.Name())
 		if err != nil {
 			return err
 		}
@@ -299,7 +304,7 @@ func (m *Migrations) migrate(migration *Migration, bridge interface{}) error {
 	if err := m.Transaction(func(tx *sql.Tx) error {
 		start := time.Now()
 
-		inQuery := "INSERT INTO " + m.tablePrefix + "_" + "migrations(version, migration_name, start_time)VALUES(?,?,?);"
+		inQuery := "INSERT INTO " + migrationsTableName(m.tablePrefix) + "(version, migration_name, start_time)VALUES(?,?,?);"
 		if _, err := tx.Exec(inQuery, migration.Version, migration.Name, start); err != nil {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
 		}
@@ -313,7 +318,7 @@ func (m *Migrations) migrate(migration *Migration, bridge interface{}) error {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
 		}
 
-		updateQuery := "UPDATE " + m.tablePrefix + "_" + "migrations SET end_time = ? WHERE version = ?;"
+		updateQuery := "UPDATE " + migrationsTableName(m.tablePrefix) + " SET end_time = ? WHERE version = ?;"
 		end := time.Now()
 		if _, err := tx.Exec(updateQuery, end, migration.Version); err != nil {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
@@ -374,7 +379,7 @@ func (m *Migrations) rollback(migration *Migration, bridge interface{}) error {
 			}
 		}
 
-		delQuery := "DELETE FROM " + m.tablePrefix + "_" + "migrations WHERE version = ?"
+		delQuery := "DELETE FROM " + migrationsTableName(m.tablePrefix) + " WHERE version = ?"
 		if _, err := m.db.Exec(delQuery, migration.Version); err != nil {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
 		}

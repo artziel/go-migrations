@@ -83,7 +83,7 @@ func TestParseTplSQL(t *testing.T) {
 
 func TestMigration(t *testing.T) {
 
-	m := MigrationFromString(testMigrationSQL)
+	m := FromString(testMigrationSQL)
 
 	expected := "Migration Name"
 	if result := m.getName(testMigrationSQL); result != expected {

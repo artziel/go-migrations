@@ -106,8 +106,8 @@ func main() {
 	ms := Migrations.Migrations{}
 	ms.Initialize(conn, "alus")
 
-	m1 := Migrations.MigrationFromString(Sample1Migration)
-	m2 := Migrations.MigrationFromString(Sample2Migration)
+	m1 := Migrations.FromString(Sample1Migration)
+	m2 := Migrations.FromString(Sample2Migration)
 
 	if err := ms.AddMigrations([]Migrations.Migration{m1, m2}); err != nil {
 		panic(err)
