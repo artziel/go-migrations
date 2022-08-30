@@ -18,6 +18,7 @@ type MySqlSettings struct {
 	Host             string
 	Port             string
 	Database         string
+	Charset          string
 	MaxAllowedPacket int
 	ConnMaxLifetime  time.Duration
 	MaxOpenConns     int
@@ -30,6 +31,9 @@ func setMySqlDefaults(cnf *MySqlSettings) {
 	}
 	if cnf.MaxOpenConns == 0 {
 		cnf.MaxOpenConns = 10
+	}
+	if cnf.Charset == "" {
+		cnf.Charset = "utf8mb4"
 	}
 	if cnf.ConnMaxLifetime == 0 {
 		cnf.ConnMaxLifetime = time.Minute * 3
@@ -59,12 +63,13 @@ func OpenMySql(cnf MySqlSettings) (*sql.DB, error) {
 	setMySqlDefaults(&cnf)
 
 	dsn := fmt.Sprintf(
-		"%v:%v@tcp(%v:%v)/%v?tls=skip-verify&autocommit=true&multiStatements=true&parseTime=true&maxAllowedPacket=%v",
+		"%v:%v@tcp(%v:%v)/%v?charset=%s&tls=skip-verify&autocommit=true&multiStatements=true&parseTime=true&maxAllowedPacket=%v",
 		cnf.Username,
 		cnf.Password,
 		cnf.Host,
 		cnf.Port,
 		cnf.Database,
+		cnf.Charset,
 		cnf.MaxAllowedPacket,
 	)
 
