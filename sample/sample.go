@@ -33,7 +33,7 @@ ENGINE = InnoDB;
 -- ------------------------------------------------------------
 -- Down Start
 
-DROP TABLE catalogs;dddd
+DROP TABLE catalogs;
 
 -- Down End
 -- ------------------------------------------------------------
@@ -49,7 +49,6 @@ const Sample2Migration = `
 
 INSERT INTO catalogs (id, tag, name, description)
 VALUES ( 1, 'MASTER', 'Catálogo Maestro', 'Este catálogo incluye todos los productos' );
-
 INSERT INTO catalogs (id, tag, name, description)
 VALUES ( 2, 'MASTER 2', 'Catálogo Maestro 2', '{{ .Encript "123456" }}' );
 
@@ -64,7 +63,7 @@ DELETE FROM catalogs;
 -- ------------------------------------------------------------
 `
 
-func migrate(ms *Migrations.Migrations) {
+func migrate(ms *Migrations.Pool) {
 	fmt.Println("Before Migration -------------------------------------------")
 	for i, m := range ms.GetMigrations() {
 		fmt.Printf("%v) %v - %v - %v\n", i, m.Version, m.Name, m.Status)
@@ -80,7 +79,7 @@ func migrate(ms *Migrations.Migrations) {
 	}
 }
 
-func rollback(ms *Migrations.Migrations) {
+func rollback(ms *Migrations.Pool) {
 	if err := ms.Rollback(nil, nil, nil); err != nil {
 		panic(err)
 	}
@@ -92,7 +91,7 @@ func rollback(ms *Migrations.Migrations) {
 }
 
 func main() {
-	conn, err := Migrations.OpenMySql(Migrations.MySqlSettings{
+	db, err := Migrations.OpenMySql(Migrations.MySqlSettings{
 		Username: "admin",
 		Password: "admin",
 		Host:     "localhost",
@@ -102,19 +101,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer db.Close()
 
-	ms := Migrations.Migrations{}
-	ms.Initialize(conn, "alus")
+	if pool, err := Migrations.NewPool(db); err != nil {
 
-	m1 := Migrations.FromString(Sample1Migration)
-	m2 := Migrations.FromString(Sample2Migration)
+		m1 := Migrations.FromString(Sample1Migration)
+		m2 := Migrations.FromString(Sample2Migration)
 
-	if err := ms.AddMigrations([]Migrations.Migration{m1, m2}); err != nil {
-		panic(err)
+		if err := pool.AddMigrations([]Migrations.Migration{m1, m2}); err != nil {
+			panic(err)
+		}
+
+		migrate(&pool)
+		rollback(&pool)
 	}
-
-	migrate(&ms)
-	rollback(&ms)
-
-	conn.Close()
 }

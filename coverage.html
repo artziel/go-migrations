@@ -289,7 +289,6 @@ import (
         "database/sql"
         "errors"
         "fmt"
-        "log"
         "os"
         "sort"
         "strings"
@@ -449,7 +448,7 @@ func (m *Migrations) IsVersionUp(version string) bool <span class="cov0" title="
  * If the migrations table is missing, this function create de table to keep an
  * execution log.
  */
-func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, error) <span class="cov0" title="0">{
+func (m *Migrations) Initialize(db *sql.DB, tblprefix string) error <span class="cov0" title="0">{
         m.tablePrefix = tblprefix
         m.migrations = map[string]Migration{}
         m.ups = []string{}
@@ -458,21 +457,21 @@ func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, erro
         query := strings.Replace(migrationsQuery, "{{MIGRATIONS_TABLE_NAME}}", migrationsTableName(tblprefix), 1)
 
         if _, err := db.Exec(query); err != nil </span><span class="cov0" title="0">{
-                panic(err)</span>
-        }
+                return err
+        }</span>
         <span class="cov0" title="0">m.db = db
 
         queryUps := "SELECT version, migration_name, start_time, end_time FROM " + migrationsTableName(tblprefix) + " ORDER BY version ASC"
         rows, err := m.db.Query(queryUps)
         if err != nil </span><span class="cov0" title="0">{
-                panic(err)</span>
-        }
+                return err
+        }</span>
         <span class="cov0" title="0">defer rows.Close()
         for rows.Next() </span><span class="cov0" title="0">{
                 migration := Migration{}
                 err := rows.Scan(&amp;migration.Version, &amp;migration.Name, &amp;migration.StartTime, &amp;migration.EndTime)
                 if err != nil </span><span class="cov0" title="0">{
-                        log.Fatal(err)
+                        return err
                 }</span> else<span class="cov0" title="0"> {
                         migration.Status = StatusUp
                         m.migrations[migration.Version] = migration
@@ -481,10 +480,10 @@ func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, erro
         }
         <span class="cov0" title="0">err = rows.Err()
         if err != nil </span><span class="cov0" title="0">{
-                log.Fatal(err)
+                return err
         }</span>
 
-        <span class="cov0" title="0">return m, err</span>
+        <span class="cov0" title="0">return err</span>
 }
 
 func (m *Migrations) GetMigrationsByStatus(status string) []Migration <span class="cov0" title="0">{

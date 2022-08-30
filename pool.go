@@ -5,76 +5,50 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"sort"
 	"strings"
 	"time"
 )
 
-func migrationsTableName(prefix string) string {
-	tblName := "migrations"
-
-	if prefix != "" {
-		tblName = prefix + "_" + tblName
-	}
-
-	return tblName
-}
-
-func FromString(body string) Migration {
-
-	migration := Migration{}
-
-	migration.Up = migration.getUpQuery(body)
-	migration.Down = migration.getDownQuery(body)
-	migration.Version = migration.getVersion(body)
-	migration.Name = migration.getName(body)
-
-	return migration
-}
-
-func FromFile(fileName string) (Migration, error) {
-	migration := Migration{}
-	content, err := os.ReadFile(fileName)
-	if err != nil {
-		return migration, err
-	}
-
-	migration.Up = migration.getUpQuery(string(content))
-	migration.Down = migration.getDownQuery(string(content))
-	migration.Version = migration.getVersion(string(content))
-	migration.Name = migration.getName(string(content))
-
-	return migration, nil
-}
-
 /**
  * Query for migration execution log
  */
-const migrationsQuery string = `
-CREATE TABLE IF NOT EXISTS {{MIGRATIONS_TABLE_NAME}} (
+const migrationsQuery string = `CREATE TABLE IF NOT EXISTS {{MIGRATIONS_TABLE_NAME}} (
 	version VARCHAR(14) NOT NULL,
 	migration_name VARCHAR(128) NULL,
 	start_time TIMESTAMP NULL DEFAULT NOW(),
 	end_time TIMESTAMP NULL,
 	PRIMARY KEY (version),
 	UNIQUE INDEX version_UNIQUE (version ASC))
-ENGINE = InnoDB;
-`
+ENGINE = InnoDB;`
+
+func NewPool(db *sql.DB) (Pool, error) {
+	var pool Pool = Pool{
+		tableName:  "migrations",
+		db:         db,
+		migrations: map[string]Migration{},
+		ups:        []string{},
+		downs:      []string{},
+	}
+
+	err := pool.initialize()
+
+	return pool, err
+}
 
 /**
  * Migrations structure
  */
-type Migrations struct {
-	db          *sql.DB
-	tablePrefix string
-	migrations  map[string]Migration
-	ups         []string
-	downs       []string
+type Pool struct {
+	db         *sql.DB
+	tableName  string
+	migrations map[string]Migration
+	ups        []string
+	downs      []string
 }
 
-func (m *Migrations) Transaction(fnc func(tx *sql.Tx) error) error {
+func (m *Pool) transaction(fnc func(tx *sql.Tx) error) error {
 
 	ctx := context.Background()
 	tx, err := m.db.BeginTx(ctx, nil)
@@ -99,7 +73,7 @@ func (m *Migrations) Transaction(fnc func(tx *sql.Tx) error) error {
 /**
  * Reset migration structure, clear loaded migrations map and slices
  */
-func (m *Migrations) Reset() {
+func (m *Pool) Reset() {
 	for k := range m.migrations {
 		delete(m.migrations, k)
 	}
@@ -108,27 +82,10 @@ func (m *Migrations) Reset() {
 }
 
 /**
- * Add a migration to Migrations structure
- */
-func (m *Migrations) addMigration(migration Migration) {
-
-	if _, found := m.migrations[migration.Version]; !found {
-		migration.Status = StatusDown
-		m.migrations[migration.Version] = migration
-		if !m.IsVersionUp(migration.Version) {
-			m.downs = append(m.downs, migration.Version)
-		}
-	} else {
-		migration.Status = StatusUp
-		m.migrations[migration.Version] = migration
-	}
-}
-
-/**
  * Transverse a Migrations slice and add no duplicated migrations. If duplicated
  * the function Migrations.Reset() is executed and return an error
  */
-func (m *Migrations) AddMigrations(migrations []Migration) error {
+func (m *Pool) AddMigrations(migrations []Migration) error {
 
 	versions := map[string]bool{}
 
@@ -137,7 +94,16 @@ func (m *Migrations) AddMigrations(migrations []Migration) error {
 			m.Reset()
 			return errors.New("found duplicated migration version \"" + migration.Version + "\"")
 		} else {
-			m.addMigration(migration)
+			if _, found := m.migrations[migration.Version]; !found {
+				migration.Status = StatusDown
+				m.migrations[migration.Version] = migration
+				if !m.IsVersionUp(migration.Version) {
+					m.downs = append(m.downs, migration.Version)
+				}
+			} else {
+				migration.Status = StatusUp
+				m.migrations[migration.Version] = migration
+			}
 			versions[migration.Version] = true
 		}
 	}
@@ -147,7 +113,7 @@ func (m *Migrations) AddMigrations(migrations []Migration) error {
 /**
  * Check if a migration version is already up
  */
-func (m *Migrations) IsVersionUp(version string) bool {
+func (m *Pool) IsVersionUp(version string) bool {
 	for _, m := range m.ups {
 		if version == m {
 			return true
@@ -165,30 +131,24 @@ func (m *Migrations) IsVersionUp(version string) bool {
  * If the migrations table is missing, this function create de table to keep an
  * execution log.
  */
-func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, error) {
-	m.tablePrefix = tblprefix
-	m.migrations = map[string]Migration{}
-	m.ups = []string{}
-	m.downs = []string{}
+func (m *Pool) initialize() error {
 
-	query := strings.Replace(migrationsQuery, "{{MIGRATIONS_TABLE_NAME}}", migrationsTableName(tblprefix), 1)
-
-	if _, err := db.Exec(query); err != nil {
-		panic(err)
+	if _, err := m.db.Exec(
+		strings.Replace(migrationsQuery, "{{MIGRATIONS_TABLE_NAME}}", m.tableName, 1),
+	); err != nil {
+		return err
 	}
-	m.db = db
 
-	queryUps := "SELECT version, migration_name, start_time, end_time FROM " + migrationsTableName(tblprefix) + " ORDER BY version ASC"
-	rows, err := m.db.Query(queryUps)
+	rows, err := m.db.Query("SELECT version, migration_name, start_time, end_time FROM " + m.tableName + " ORDER BY version ASC")
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		migration := Migration{}
 		err := rows.Scan(&migration.Version, &migration.Name, &migration.StartTime, &migration.EndTime)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		} else {
 			migration.Status = StatusUp
 			m.migrations[migration.Version] = migration
@@ -197,13 +157,13 @@ func (m *Migrations) Initialize(db *sql.DB, tblprefix string) (*Migrations, erro
 	}
 	err = rows.Err()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	return m, err
+	return err
 }
 
-func (m *Migrations) GetMigrationsByStatus(status string) []Migration {
+func (m *Pool) GetMigrationsByStatus(status string) []Migration {
 
 	migrations := []Migration{}
 
@@ -222,9 +182,9 @@ func (m *Migrations) GetMigrationsByStatus(status string) []Migration {
 	return migrations
 }
 
-func (m *Migrations) GetMigrationStatus(migration *Migration) (string, error) {
+func (m *Pool) GetMigrationStatus(migration *Migration) (string, error) {
 
-	query := "SELECT version, start_time, end_time FROM " + migrationsTableName(m.tablePrefix) + " WHERE version = ? LIMIT 1"
+	query := "SELECT version, start_time, end_time FROM " + m.tableName + " WHERE version = ? LIMIT 1"
 
 	var version string
 
@@ -242,7 +202,7 @@ func (m *Migrations) GetMigrationStatus(migration *Migration) (string, error) {
 	return migration.Status, nil
 }
 
-func (m *Migrations) GetMigrations() []Migration {
+func (m *Pool) GetMigrations() []Migration {
 
 	migrations := make([]Migration, 0, len(m.migrations))
 	keys := make([]string, 0, len(m.migrations))
@@ -258,7 +218,7 @@ func (m *Migrations) GetMigrations() []Migration {
 	return migrations
 }
 
-func (m *Migrations) LoadFolder(path string) error {
+func (m *Pool) LoadFolder(path string) error {
 
 	files, err := os.ReadDir(path)
 	if err != nil {
@@ -288,23 +248,23 @@ func (m *Migrations) LoadFolder(path string) error {
 	return nil
 }
 
-func (m *Migrations) HasDownMigrations() bool {
+func (m *Pool) HasDownMigrations() bool {
 	return len(m.downs) > 0
 }
 
-func (m *Migrations) HasUpMigrations() bool {
+func (m *Pool) HasUpMigrations() bool {
 	return len(m.ups) > 0
 }
 
-func (m *Migrations) migrate(migration *Migration, bridge interface{}) error {
+func (m *Pool) migrate(migration *Migration, bridge interface{}) error {
 	if migration.Status != StatusDown {
 		return errors.New("migration " + migration.Version + " >> Migration already Up")
 	}
 
-	if err := m.Transaction(func(tx *sql.Tx) error {
+	if err := m.transaction(func(tx *sql.Tx) error {
 		start := time.Now()
 
-		inQuery := "INSERT INTO " + migrationsTableName(m.tablePrefix) + "(version, migration_name, start_time)VALUES(?,?,?);"
+		inQuery := "INSERT INTO " + m.tableName + "(version, migration_name, start_time)VALUES(?,?,?);"
 		if _, err := tx.Exec(inQuery, migration.Version, migration.Name, start); err != nil {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
 		}
@@ -318,7 +278,7 @@ func (m *Migrations) migrate(migration *Migration, bridge interface{}) error {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
 		}
 
-		updateQuery := "UPDATE " + migrationsTableName(m.tablePrefix) + " SET end_time = ? WHERE version = ?;"
+		updateQuery := "UPDATE " + m.tableName + " SET end_time = ? WHERE version = ?;"
 		end := time.Now()
 		if _, err := tx.Exec(updateQuery, end, migration.Version); err != nil {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
@@ -339,7 +299,7 @@ func (m *Migrations) migrate(migration *Migration, bridge interface{}) error {
 	return nil
 }
 
-func (m *Migrations) Migrate(bridge interface{}, pre func(*Migration), post func(*Migration)) error {
+func (m *Pool) Migrate(bridge interface{}, pre func(*Migration), post func(*Migration)) error {
 
 	for _, version := range m.downs {
 		migration := m.migrations[version]
@@ -361,7 +321,7 @@ func (m *Migrations) Migrate(bridge interface{}, pre func(*Migration), post func
 	return nil
 }
 
-func (m *Migrations) rollback(migration *Migration, bridge interface{}) error {
+func (m *Pool) rollback(migration *Migration, bridge interface{}) error {
 
 	if migration.Status != StatusUp {
 		return errors.New("migration " + migration.Version + " >> Migration already Down")
@@ -371,7 +331,7 @@ func (m *Migrations) rollback(migration *Migration, bridge interface{}) error {
 		return err
 	}
 
-	if err := m.Transaction(func(tx *sql.Tx) error {
+	if err := m.transaction(func(tx *sql.Tx) error {
 		if downQuery != "" {
 			fmt.Printf("Down Query executed: %v\n", downQuery)
 			if _, err := m.db.Exec(downQuery); err != nil {
@@ -379,7 +339,7 @@ func (m *Migrations) rollback(migration *Migration, bridge interface{}) error {
 			}
 		}
 
-		delQuery := "DELETE FROM " + migrationsTableName(m.tablePrefix) + " WHERE version = ?"
+		delQuery := "DELETE FROM " + m.tableName + " WHERE version = ?"
 		if _, err := m.db.Exec(delQuery, migration.Version); err != nil {
 			return errors.New("migration " + migration.Version + " >> " + err.Error())
 		}
@@ -394,7 +354,7 @@ func (m *Migrations) rollback(migration *Migration, bridge interface{}) error {
 	return nil
 }
 
-func (m *Migrations) Rollback(bridge interface{}, pre func(*Migration), post func(*Migration)) error {
+func (m *Pool) Rollback(bridge interface{}, pre func(*Migration), post func(*Migration)) error {
 
 	if len(m.ups) > 0 {
 		last := m.ups[len(m.ups)-1]

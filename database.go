@@ -1,15 +1,16 @@
 package migrations
 
 import (
-	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
+
+var conn *sql.DB
+var lock = &sync.Mutex{}
 
 type MySqlSettings struct {
 	Username         string
@@ -38,39 +39,12 @@ func setMySqlDefaults(cnf *MySqlSettings) {
 	}
 }
 
-var ErrNoOpenConnection = errors.New("no open connection found")
-
-var conn *sql.DB
-var lock = &sync.Mutex{}
-
 func Connection() (*sql.DB, error) {
 	if conn == nil {
 		return nil, ErrNoOpenConnection
 	}
 
 	return conn, nil
-}
-
-func Transaction(db *sql.DB, transaction func() error) error {
-
-	ctx := context.Background()
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	// Defer a rollback in case anything fails.
-	defer tx.Rollback()
-
-	if err := transaction(); err != nil {
-		return err
-	}
-
-	// Commit the transaction.
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func OpenMySql(cnf MySqlSettings) (*sql.DB, error) {
@@ -98,7 +72,7 @@ func OpenMySql(cnf MySqlSettings) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// See "Important settings" section.
+
 	db.SetConnMaxLifetime(cnf.ConnMaxLifetime)
 	db.SetMaxOpenConns(cnf.MaxOpenConns)
 	db.SetMaxIdleConns(cnf.MaxIdleConns)
